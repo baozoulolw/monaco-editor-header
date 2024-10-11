@@ -1,40 +1,58 @@
 import { Monaco } from "./index";
 import { editor as Editor, IDisposable } from "monaco-editor";
+import { fileEndMatch } from "./util/utils";
+import { lineSpaceFn } from "./util/logicUtil";
+import { config } from "./config/config";
+
+let listenerActive: boolean = true;
+let hasReg = false;
 let activeEditor: Editor.IStandaloneCodeEditor | null = null;
-let disposeMap = new WeakMap<Editor.IStandaloneCodeEditor, IDisposable[]>();
-let keyMap = new Map<
-  Editor.IStandaloneCodeEditor,
-  Editor.IStandaloneCodeEditor
+let disposeMap = new WeakMap<
+  Editor.IStandaloneCodeEditor | Editor.ICodeEditor,
+  IDisposable[]
 >();
+
 export function functionAnnotation(monaco: Monaco) {
-  console.log(activeEditor);
+  if (!activeEditor) return;
+  const languageId = activeEditor.getModel()?.getLanguageId();
+  if (!languageId) return;
+  const fileEnd = fileEndMatch(languageId);
+  const [lineSpace, line, nextLine, lineProperty] = lineSpaceFn(activeEditor);
+  console.log(monaco, fileEnd);
+  const model = activeEditor.getModel();
+  if (!model) return;
+  const insertEdit = {
+    startLineNumber: position.lineNumber,
+    startColumn: position.column,
+    endLineNumber: position.lineNumber,
+    endColumn: position.column,
+  };
 }
 
 export function listenerCreate(monaco: Monaco) {
+  listenerActive = true;
+  if (hasReg === true) return;
   let create = monaco.editor.create;
   monaco.editor.create = function (...params) {
     const editor = create(...params);
-    const disposeF1 = editor.onDidFocusEditorWidget(() =>
-      setActiveEditor(editor)
-    );
-    const disposeF2 = editor.onDidBlurEditorWidget(() => setActiveEditor(null));
-    keyMap.set(editor, editor);
-    disposeMap.set(editor, [disposeF1, disposeF2]);
-    editor.onDidDispose(() => {
-      disposeF1.dispose();
-      disposeF2.dispose();
-      keyMap.delete(editor);
-    });
+    if (listenerActive) {
+      const disposeF1 = editor.onDidFocusEditorWidget(() =>
+        setActiveEditor(editor)
+      );
+      const disposeF2 = editor.onDidBlurEditorWidget(() =>
+        setActiveEditor(null)
+      );
+      disposeMap.set(editor, [disposeF1, disposeF2]);
+    }
     return editor;
   };
+  hasReg = true;
   return () => {
-    for (const [key, _] of keyMap) {
-      const value = disposeMap.get(key);
-      if (value !== undefined) {
-        value.forEach((item) => item.dispose());
-      }
-    }
-    monaco.editor.create = create;
+    listenerActive = false;
+    monaco.editor.getEditors().forEach((editor) => {
+      disposeMap.get(editor)?.forEach((item) => item.dispose());
+      disposeMap.delete(editor);
+    });
   };
 }
 
